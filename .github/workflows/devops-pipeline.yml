@@ -1,0 +1,63 @@
+name: Assignment 2 DevOps CI-CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build and run tests
+        run: mvn -B clean verify
+
+      - name: Build Docker image
+        run: docker build -t assignment2-app:${{ github.sha }} .
+
+  deploy:
+    name: Deploy with Docker Compose
+    needs: build-test
+    if: github.event_name != 'pull_request'
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Deploy application
+        run: docker compose up -d --build
+
+      - name: Verify running container
+        run: docker compose ps
+
+      - name: Test application endpoint
+        run: |
+          for i in $(seq 1 20); do
+            if curl --fail http://localhost:8080/health; then
+              echo
+              echo "Deployment successful"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Application health check failed"
+          docker compose logs
+          exit 1
